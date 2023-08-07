@@ -1,0 +1,83 @@
+### How to run the project
+# Once you have dockers setup and runing in terminal
+# Run docker-compose up --build -d 
+
+version: "3.7"
+services:
+    # Configures the mysql service
+    db:
+        image: mysql:5.7
+        container_name: crims-db
+        # let the container to restart automatically unless it has been manualy stoped
+        restart: unless-stopped
+        # Maps the hosts port 33060 to the exposed port 3306 in the mysql container 
+        ports:
+            - 33060:3306
+        # set environment variables for the service
+        environment:
+            MYSQL_DATABASE: ${DB_DATABASE}
+            MYSQL_ALLOW_EMPTY_PASSWORD: "true"
+            MYSQL_ROOT_PASSWORD:
+            SERVICE_TAGS: dev
+            SERVICE_NAME: mysql
+        # Map mysql volumes for performing initial database setup and populating the database with data
+        volumes:
+            - /Users/sbenard/.ssh/:/home/sam/.ssh
+            - ./docker-compose/mysql:/docker-entrypoint-initdb.d
+        # Attach container to crimsnetwork
+        networks:
+            - crimsnetwork
+        secrets:
+            - user_ssh_key
+    # Configures the app (project) container
+    app:
+        build:
+            # arguments to for user
+            args:
+                user: sam
+                uid: 1000
+            context: ./
+            # Get the Dockerfile to use for image creation from the current directory
+            dockerfile: Dockerfile
+        image: crims
+        depends_on:
+            - db
+        container_name: crims-app
+        restart: unless-stopped
+        working_dir: /app
+        # Map the current directory to the /app directory in the container
+        volumes:
+            - /Users/sbenard/.ssh:/home/sam/.ssh
+            - ./:/app
+        networks:
+            - crimsnetwork
+        secrets:
+            - user_ssh_key
+    # Configures the nginx web server container
+    nginx:
+        image: nginx:alpine
+        container_name: crims-nginx
+        restart: unless-stopped
+        depends_on:
+            - db
+            - app
+        ports:
+            - 80:80
+            - 3000:3000
+        volumes:
+            - /Users/sbenard/.ssh:/home/sam/.ssh
+            - ./:/app
+            # Gets the nginx server configuration from the project into the container config 
+            - ./docker-compose/nginx:/etc/nginx/conf.d/
+        networks:
+            - crimsnetwork
+        secrets:
+            - user_ssh_key
+
+secrets:
+    user_ssh_key:
+        file: ~/.ssh/id_rsa
+# Create the network to be used by the containers
+networks:
+    crimsnetwork:
+        driver: bridge
